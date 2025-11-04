@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitor de Emergencias Cardíacas - SIMULADOR APK (SILENCIOSO)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js"></script>
+    
+    <style>
+        /* --- ESTILOS RESPONSIVOS OPTIMIZADOS PARA MÓVIL (WebView) --- */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f2f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        .container {
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            background: white;
+            min-height: 100vh;
+        }
+        h1 {
+            color: #d9534f;
+            text-align: center;
+            margin-bottom: 5px;
+            font-size: 1.6em;
+        }
+        .controls, .defib-controls {
+            display: grid;
+            grid-template-columns: 1fr; 
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #fce9e8 0%, #ffffff 100%);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        .defib-controls {
+            background: #ffe0e0;
+            border: 2px solid #d9534f;
+            margin-top: 10px;
+            padding: 20px;
+            margin-bottom: 0; /* Eliminado margen inferior */
+        }
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #d9534f;
+            font-size: 0.95em;
+        }
+        .control-group input[type="range"], 
+        .control-group select, 
+        .control-group input[type="number"],
+        #playPauseBtn, #defibChargeBtn, #defibDeliverBtn {
+            width: 100%;
+            padding: 12px;
+            font-size: 1em;
+            border-radius: 8px;
+            cursor: pointer;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
+        }
+        #playPauseBtn, #defibChargeBtn, #defibDeliverBtn {
+            border: none;
+            font-weight: bold;
+            height: 50px;
+            position: relative; 
+            overflow: hidden; 
+        }
+        .playing { background-color: #28a745; color: white; }
+        .paused { background-color: #ffc107; color: #333; }
+        #defibChargeBtn { background-color: #007bff; color: white; }
+        #defibDeliverBtn { background-color: #d9534f; color: white; opacity: 0.5; cursor: not-allowed;}
+        #defibDeliverBtn.ready { opacity: 1; cursor: pointer; }
+
+        /* Referencia Clínica (Nueva ubicación, sin margen superior) */
+        #clinical-reference {
+            margin-top: 15px; /* Pequeño margen superior para separarla del desfibrilador */
+            padding: 15px;
+            border-radius: 12px;
+            background-color: #fff;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        #clinical-reference h3 {
+            margin-top: 0;
+            color: #007bff;
+            font-size: 1.4em;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 5px;
+            margin-bottom: 10px;
+        }
+        .warning {
+            color: #d9534f;
+            font-weight: bold;
+            border-left: 3px solid #d9534f;
+            padding-left: 10px;
+            margin-top: 10px;
+        }
+
+        /* Monitor ECG */
+        .chart-container {
+            padding: 5px;
+            border-radius: 12px;
+            background-color: #1e1e1e;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+            margin-top: 15px; /* Margen para separarlo de la referencia clínica */
+        }
+        #ecgChart { background-color: #2e2e2e; border-radius: 8px; }
+
+        /* Desktop: Vuelve a 4 columnas */
+        @media (min-width: 768px) {
+            .container { max-width: 1000px; margin: 20px auto; padding: 30px; border-radius: 15px; }
+            .controls { grid-template-columns: 1fr 1fr 1fr 1fr; gap: 20px; }
+            .defib-controls { grid-template-columns: 1fr 1fr 1fr; }
+        }
+    </style>
+</head>
+<body>
+    
+    <div class="container">
+        <h1>Monitor de Emergencias Cardíacas 🔴</h1>
+        
+        <div class="controls">
+            <div class="control-group">
+                <button id="playPauseBtn" class="playing"><span>⏸️ Pausar</span></button>
+            </div>
+            
+            <div class="control-group">
+                <label for="patologia">🩺 Patología (Ritmo)</label>
+                <select id="patologia">
+                    <option value="normal">Ritmo Sinusal Normal</option>
+                    <optgroup label="Ritmos Desfibrilables (Choque Necesario)">
+                        <option value="vfib">Fibrilación Ventricular (FV)</option>
+                        <option value="pulseless_vt">Taquicardia Ventricular (sin pulso)</option>
+                    </optgroup>
+                    <optgroup label="Ritmos NO Desfibrilables (Choque Prohibido)">
+                        <option value="asystole">Asistolia (Línea Plana)</option>
+                        <option value="pea">Actividad Eléctrica sin Pulso (PEA)</option>
+                        <option value="bav3">Bloqueo AV de 3er Grado</option>
+                        <option value="fibrilacion">Fibrilación Auricular (FA)</option>
+                        <option value="flutter">Flutter Auricular</option>
+                        <option value="svt">Taquicardia Supraventricular (TSV)</option>
+                        <option value="infarto">Infarto (Elevación ST)</option>
+                    </optgroup>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="edad">👤 Edad (<span id="edad-value">45</span> Años)</label>
+                <input type="number" id="edad" min="1" max="120" value="45">
+            </div>
+
+            <div class="control-group">
+                <label for="frecuencia">❤️ FC Base (<span id="frecuencia-value">80</span> BPM)</label>
+                <input type="range" id="frecuencia" min="40" max="180" value="80">
+            </div>
+        </div>
+
+        <h2>Desfibrilador ⚡</h2>
+        <div class="defib-controls">
+            <div class="control-group">
+                <label for="charge">Carga (Joules)</label>
+                <input type="range" id="charge" min="50" max="360" step="10" value="200">
+                <span id="charge-value">200 J</span>
+            </div>
+            <div class="control-group">
+                <button id="defibChargeBtn"><span>🔋 Cargar</span></button>
+            </div>
+            <div class="control-group">
+                <button id="defibDeliverBtn"><span>💥 Descargar</span></button>
+            </div>
+        </div>
+
+        <div id="clinical-reference">
+            <h3>Referencia Clínica</h3>
+            <p id="patologia-title" style="font-weight: bold; font-size: 1.1em; color: #333;">Ritmo Sinusal Normal</p>
+            <p id="patologia-desc">El impulso eléctrico se origina en el nodo sinusal y sigue la vía de conducción normal, resultando en un ritmo cardíaco regular y una frecuencia adecuada.</p>
+            <p class="warning" id="defib-obs">**OBSERVACIÓN DESFIBRILADOR:** NO indicado. Aplicar un choque en este ritmo es peligroso y puede inducir Asistolia. El paciente tiene pulso.</p>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="ecgChart" height="400"></canvas>
+        </div>
+
+    </div>
+
+    <script>
+        // --- INICIALIZACIÓN Y VARIABLES GLOBALES ---
+        const ctx = document.getElementById('ecgChart').getContext('2d');
+        let ecgChart;
+        const maxPoints = 150;
+        let dataSet = Array(maxPoints).fill(0);
+        let animationFrameId;
+
+        // Referencias a elementos
+        const patologiaControl = document.getElementById('patologia');
+        const frecuenciaControl = document.getElementById('frecuencia');
+        const chargeControl = document.getElementById('charge');
+        const defibChargeBtn = document.getElementById('defibChargeBtn');
+        const defibDeliverBtn = document.getElementById('defibDeliverBtn');
+        const playPauseBtn = document.getElementById('playPauseBtn');
+
+        // Referencias de texto
+        const patologiaTitle = document.getElementById('patologia-title');
+        const patologiaDesc = document.getElementById('patologia-desc');
+        const defibObs = document.getElementById('defib-obs');
+
+        let isPlaying = true;
+        let beatCounter = 0;
+        let defibCharged = false;
+        let currentBPM = 80;
+
+        // Base Pattern and Patology Logic 
+        const basePattern = [0, 0, 0, 0, 0.5, 1.5, 0.5, 0, 0, -3, 12, -6, 0, 0, 0, 1, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        
+        function getBeatValue(pointInBeat) {
+            return basePattern[pointInBeat % basePattern.length] || 0;
+        }
+
+        function getPatologyValue(baseValue, pointInBeat, pointsPerBeat) {
+            const patologia = patologiaControl.value;
+             switch (patologia) {
+                case 'vfib': return (Math.random() * 10 - 5) + Math.sin(beatCounter / 5) * 5;
+                case 'pulseless_vt': const vtBeat = [-8, 8, -8, 8, -8, 0, 0, 0]; return vtBeat[pointInBeat % vtBeat.length] || 0;
+                case 'asystole': return 0;
+                case 'pea': const peaWave = [0, 1, 0.5, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0]; return (peaWave[pointInBeat % (pointsPerBeat / 3)] || 0) * 0.5;
+                case 'flutter': const fWave = Math.sin(beatCounter * 0.8) * 1.5; const qrsBase = (pointInBeat >= 9 && pointInBeat <= 15) ? getBeatValue(pointInBeat) : 0; return fWave + qrsBase;
+                case 'svt': if (pointInBeat < 7) return 0; return baseValue;
+                case 'fibrilacion': const pWaveFactor = (pointInBeat < 7 && pointInBeat > 3) ? 0.1 : 1; const chaoticBase = (Math.random() - 0.5) * 0.5; return (baseValue * pWaveFactor) + chaoticBase;
+                case 'infarto': if (pointInBeat >= 12 && pointInBeat <= 16) return baseValue + 4; return baseValue;
+                case 'bav3': const qrsPattern = [-3, 12, -6, 0, 0, 1, 3, 1, 0, 0, 0, 0, 0]; const qrsIndex = beatCounter % 70; let qrsValue = qrsPattern[qrsIndex] || 0; if (qrsIndex >= qrsPattern.length) qrsValue = 0; let pWaveValue = (beatCounter % 20 >= 4 && beatCounter % 20 <= 6) ? basePattern[beatCounter % 20] : 0; return qrsValue + pWaveValue;
+                case 'normal': default: return baseValue;
+            }
+        }
+
+        // --- REFERENCIA CLÍNICA DETALLADA ---
+        const patologiaData = {
+            'normal': { title: "Ritmo Sinusal Normal", desc: "Ritmo regular, FC entre 60 y 100 BPM. El pulso está presente.", obs: "NO indicado. Aplicar un choque en este ritmo es peligroso y puede inducir Asistolia. El paciente tiene pulso." },
+            'vfib': { title: "Fibrilación Ventricular (FV)", desc: "Actividad eléctrica caótica. NO HAY PULSO. Emergencia absoluta.", obs: "INDICADO. Es un ritmo de paro cardiaco desfibrilable. Choque exitoso ≥ 200 J revierte a Sinusal." },
+            'pulseless_vt': { title: "Taquicardia Ventricular (sin pulso)", desc: "Ritmo rápido (>150 BPM) y ancho, regular. NO HAY PULSO.", obs: "INDICADO. Es un ritmo de paro cardiaco desfibrilable. Choque no sincronizado ≥ 200 J para revertir." },
+            'asystole': { title: "Asistolia (Línea Plana)", desc: "Ausencia total de actividad eléctrica. NO HAY PULSO. Peor pronóstico.", obs: "NO indicado. La desfibrilación NO funciona. Tratamiento: RCP y Adrenalina." },
+            'pea': { title: "Actividad Eléctrica sin Pulso (PEA)", desc: "Actividad eléctrica en monitor, pero NO HAY PULSO.", obs: "NO indicado. La desfibrilación NO funciona. Tratamiento: RCP e identificación de causas reversibles." },
+            'fibrilacion': { title: "Fibrilación Auricular (FA)", desc: "Ritmo RR irregular e impulsos caóticos en las aurículas. Puede haber pulso.", obs: "NO indicado (si está estable). Se usa Cardioversión Sincronizada. Choque iatrogénico puede causar Asistolia." },
+            'infarto': { title: "Infarto Agudo de Miocardio (STEMI)", desc: "Ritmo Sinusal (generalmente) con elevación del segmento ST. Indica oclusión coronaria.", obs: "NO indicado. La desfibrilación es PELIGROSA y no trata la isquemia. Choque iatrogénico puede causar Asistolia." },
+            'bav3': { title: "Bloqueo AV de 3er Grado", desc: "Disociación completa entre aurículas y ventrículos. FC muy baja (<40 BPM).", obs: "NO indicado. El tratamiento primario es la estimulación (marcapasos). Choque iatrogénico mortal." },
+            'flutter': { title: "Flutter Auricular", desc: "Ritmo auricular rápido y regular ('dientes de sierra').", obs: "NO indicado (si está estable). Se usa Cardioversión Sincronizada. Choque no sincronizado puede inducir Asistolia." },
+            'svt': { title: "Taquicardia Supraventricular (TSV)", desc: "Ritmo regular y muy rápido (>150 BPM). QRS estrecho.", obs: "NO indicado (si está estable). Tratamiento: Adenosina. Solo Cardioversión Sincronizada si está inestable." }
+        };
+
+        function updatePatologiaInfo() {
+            const selected = patologiaControl.value;
+            const data = patologiaData[selected] || patologiaData['normal'];
+
+            patologiaTitle.textContent = data.title;
+            patologiaDesc.textContent = data.desc;
+            defibObs.innerHTML = `**OBSERVACIÓN DESFIBRILADOR:** ${data.obs}`; 
+            defibObs.className = data.obs.includes('INDICADO') ? 'warning' : 'warning';
+        }
+
+
+        // --- LÓGICA DE DESFIBRILADOR Y CHOQUE ---
+        let chargingInterval;
+        let chargeProgress = 0;
+
+        function startDefibChargeAnimation() {
+            defibCharged = false;
+            defibDeliverBtn.classList.remove('ready');
+            defibChargeBtn.disabled = true;
+            defibChargeBtn.classList.add('charging');
+            chargeProgress = 0;
+            
+            defibChargeBtn.querySelector('span').textContent = 'Cargando... 0%';
+
+            let totalChargeTime = 2000;
+            let startTime = Date.now();
+
+            chargingInterval = setInterval(() => {
+                const elapsedTime = Date.now() - startTime;
+                chargeProgress = Math.min(100, (elapsedTime / totalChargeTime) * 100);
+                
+                defibChargeBtn.querySelector('span').textContent = `Cargando... ${Math.floor(chargeProgress)}%`;
+
+                if (chargeProgress >= 100) {
+                    clearInterval(chargingInterval);
+                    defibCharged = true;
+                    defibDeliverBtn.classList.add('ready');
+                    defibChargeBtn.disabled = false;
+                    defibChargeBtn.classList.remove('charging');
+                    defibChargeBtn.querySelector('span').textContent = `⚡ LISTO (${chargeControl.value} J)`;
+                }
+            }, 50);
+        }
+
+        function handleDefibrillation() {
+            if (!defibCharged) return;
+            
+            console.log('¡CHOQUE ENTREGADO!');
+
+            const patologiaActual = patologiaControl.value;
+            const charge = parseInt(chargeControl.value);
+            let nuevoRitmo = patologiaActual; 
+
+            defibCharged = false;
+            defibDeliverBtn.classList.remove('ready');
+            defibChargeBtn.querySelector('span').textContent = '🔋 Cargar';
+
+            const ritmosDesfibrilables = ['vfib', 'pulseless_vt'];
+            const ritmosNoDesfibrilables = ['asystole', 'pea', 'bav3', 'fibrilacion', 'flutter', 'svt', 'infarto', 'normal'];
+
+            if (ritmosDesfibrilables.includes(patologiaActual)) {
+                if (charge >= 200) {
+                    nuevoRitmo = 'normal';
+                    currentBPM = 70;
+                    frecuenciaControl.value = 70;
+                    document.getElementById('frecuencia-value').textContent = '70 BPM';
+                } else {
+                    nuevoRitmo = patologiaActual; 
+                }
+            } else if (ritmosNoDesfibrilables.includes(patologiaActual)) {
+                nuevoRitmo = 'asystole'; 
+                currentBPM = 0;
+                frecuenciaControl.value = 0;
+                document.getElementById('frecuencia-value').textContent = '0 BPM (Asistolia)';
+            }
+
+            patologiaControl.value = nuevoRitmo;
+            
+            // Artefacto de choque (Visual)
+            dataSet = Array(maxPoints).fill(0).map((_, i) => (i < 5) ? 15 : 0);
+            beatCounter = 0;
+            
+            updatePatologiaInfo();
+        }
+
+        // --- BUCLE PRINCIPAL DE SIMULACIÓN Y MANEJO DE ESTADOS ---
+        function updateMonitor() {
+            if (!isPlaying) { cancelAnimationFrame(animationFrameId); return; }
+
+            const freq = parseInt(frecuenciaControl.value);
+            currentBPM = freq; 
+
+            const edad = parseInt(document.getElementById('edad').value);
+            
+            let pointsPerBeat = Math.floor(60 / freq * 150 / 2);
+            if (patologiaControl.value === 'bav3') pointsPerBeat = 70;
+            if (patologiaControl.value === 'vfib' || patologiaControl.value === 'asystole') pointsPerBeat = 1;
+
+            const pointInBeat = beatCounter % pointsPerBeat;
+            let baseValue = getBeatValue(pointInBeat);
+            let patologyValue = getPatologyValue(baseValue, pointInBeat, pointsPerBeat);
+            
+            dataSet.shift();
+            dataSet.push(patologyValue);
+
+            ecgChart.data.datasets[0].data = dataSet;
+            ecgChart.options.plugins.title.text = `FC: ${freq} BPM - ${patologiaControl.options[patologiaControl.selectedIndex].text} | EDAD: ${edad} años`;
+            ecgChart.update('none');
+
+            beatCounter++;
+            animationFrameId = requestAnimationFrame(updateMonitor);
+        }
+
+        function togglePlayPause() {
+            isPlaying = !isPlaying;
+            if (isPlaying) {
+                playPauseBtn.querySelector('span').textContent = '⏸️ Pausar';
+                playPauseBtn.classList.remove('paused');
+                playPauseBtn.classList.add('playing');
+                updateMonitor();
+            } else {
+                playPauseBtn.querySelector('span').textContent = '▶️ Iniciar';
+                playPauseBtn.classList.remove('playing');
+                playPauseBtn.classList.add('paused');
+                cancelAnimationFrame(animationFrameId);
+            }
+        }
+
+        const resetSimulation = () => {
+            beatCounter = 0; 
+            dataSet = Array(maxPoints).fill(0); 
+            
+            if(chargingInterval) {
+                clearInterval(chargingInterval);
+                defibChargeBtn.classList.remove('charging');
+                defibChargeBtn.disabled = false;
+                defibChargeBtn.querySelector('span').textContent = '🔋 Cargar';
+            }
+            defibCharged = false;
+            defibDeliverBtn.classList.remove('ready');
+
+            currentBPM = parseInt(frecuenciaControl.value);
+            updatePatologiaInfo();
+        };
+
+        // --- ENLACE DE EVENTOS ---
+        
+        playPauseBtn.addEventListener('click', togglePlayPause);
+        defibChargeBtn.addEventListener('click', startDefibChargeAnimation);
+        defibDeliverBtn.addEventListener('click', () => { if (defibCharged) { handleDefibrillation(); } });
+
+        document.getElementById('patologia').addEventListener('change', resetSimulation);
+        document.getElementById('edad').addEventListener('change', resetSimulation);
+        document.getElementById('edad').addEventListener('input', () => { 
+             document.getElementById('edad-value').textContent = document.getElementById('edad').value;
+        });
+
+        frecuenciaControl.addEventListener('input', () => { 
+            document.getElementById('frecuencia-value').textContent = frecuenciaControl.value + ' BPM';
+            currentBPM = parseInt(frecuenciaControl.value);
+        });
+
+        chargeControl.addEventListener('input', () => { 
+            document.getElementById('charge-value').textContent = chargeControl.value + ' J';
+            if (defibCharged) {
+                defibChargeBtn.querySelector('span').textContent = `⚡ LISTO (${chargeControl.value} J)`;
+            }
+        });
+        
+        function initChart() {
+            ecgChart = new Chart(ctx, {
+                type: 'line',
+                data: { labels: Array(maxPoints).fill(0).map((_, i) => i), datasets: [{
+                    label: 'ECG Trazo', data: dataSet, borderColor: '#28a745', borderWidth: 2, tension: 0.2, pointRadius: 0,
+                }]},
+                options: {
+                    animation: false, responsive: true, maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        title: { display: true, color: 'white', text: `FC: ${frecuenciaControl.value} BPM - EDAD: ${document.getElementById('edad').value} años` }
+                    },
+                    scales: { x: { display: false }, y: { min: -15, max: 15, grid: { color: 'rgba(40, 167, 69, 0.1)' }, ticks: { display: false } } }
+                }
+            });
+        }
+
+        // --- INICIO DE LA APLICACIÓN ---
+        initChart();
+        updateMonitor();
+        updatePatologiaInfo(); 
+    </script>
+</body>
+</html>
