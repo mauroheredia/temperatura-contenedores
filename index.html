@@ -1,447 +1,741 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monitor de Emergencias Cardíacas - SIMULADOR APK (SILENCIOSO)</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js"></script>
-    
-    <style>
-        /* --- ESTILOS RESPONSIVOS OPTIMIZADOS PARA MÓVIL (WebView) --- */
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f0f2f5;
-            color: #333;
-            line-height: 1.6;
-        }
-        .container {
-            width: 100%;
-            padding: 10px;
-            box-sizing: border-box;
-            background: white;
-            min-height: 100vh;
-        }
-        h1 {
-            color: #d9534f;
-            text-align: center;
-            margin-bottom: 5px;
-            font-size: 1.6em;
-        }
-        .controls, .defib-controls {
-            display: grid;
-            grid-template-columns: 1fr; 
-            gap: 15px;
-            margin-bottom: 20px;
-            padding: 15px;
-            border-radius: 12px;
-            background: linear-gradient(135deg, #fce9e8 0%, #ffffff 100%);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-        .defib-controls {
-            background: #ffe0e0;
-            border: 2px solid #d9534f;
-            margin-top: 10px;
-            padding: 20px;
-            margin-bottom: 0; /* Eliminado margen inferior */
-        }
-        .control-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 600;
-            color: #d9534f;
-            font-size: 0.95em;
-        }
-        .control-group input[type="range"], 
-        .control-group select, 
-        .control-group input[type="number"],
-        #playPauseBtn, #defibChargeBtn, #defibDeliverBtn {
-            width: 100%;
-            padding: 12px;
-            font-size: 1em;
-            border-radius: 8px;
-            cursor: pointer;
-            border: 1px solid #ccc;
-            box-sizing: border-box;
-        }
-        #playPauseBtn, #defibChargeBtn, #defibDeliverBtn {
-            border: none;
-            font-weight: bold;
-            height: 50px;
-            position: relative; 
-            overflow: hidden; 
-        }
-        .playing { background-color: #28a745; color: white; }
-        .paused { background-color: #ffc107; color: #333; }
-        #defibChargeBtn { background-color: #007bff; color: white; }
-        #defibDeliverBtn { background-color: #d9534f; color: white; opacity: 0.5; cursor: not-allowed;}
-        #defibDeliverBtn.ready { opacity: 1; cursor: pointer; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monitor Cadena de Frío</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@300;400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 
-        /* Referencia Clínica (Nueva ubicación, sin margen superior) */
-        #clinical-reference {
-            margin-top: 15px; /* Pequeño margen superior para separarla del desfibrilador */
-            padding: 15px;
-            border-radius: 12px;
-            background-color: #fff;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        }
-        #clinical-reference h3 {
-            margin-top: 0;
-            color: #007bff;
-            font-size: 1.4em;
-            border-bottom: 2px solid #eee;
-            padding-bottom: 5px;
-            margin-bottom: 10px;
-        }
-        .warning {
-            color: #d9534f;
-            font-weight: bold;
-            border-left: 3px solid #d9534f;
-            padding-left: 10px;
-            margin-top: 10px;
-        }
+<!-- Firebase SDK via CDN -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import { getDatabase, ref, onValue, push, set } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-        /* Monitor ECG */
-        .chart-container {
-            padding: 5px;
-            border-radius: 12px;
-            background-color: #1e1e1e;
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
-            margin-top: 15px; /* Margen para separarlo de la referencia clínica */
-        }
-        #ecgChart { background-color: #2e2e2e; border-radius: 8px; }
+  // ══════════════════════════════════════════
+  //  CONFIGURACIÓN FIREBASE — reemplazá con tus datos
+  // ══════════════════════════════════════════
+  const firebaseConfig = {
+  apiKey: "AIzaSyDLUnpZYmTn0bRfqvwKQca9wzbfAd0SD-U",
+  authDomain: "ia-biomedica.firebaseapp.com",
+  databaseURL: "https://ia-biomedica-default-rtdb.firebaseio.com",
+  projectId: "ia-biomedica",
+  storageBucket: "ia-biomedica.firebasestorage.app",
+  messagingSenderId: "228464906184",
+  appId: "1:228464906184:web:6f317a103a68c9a5efbafd"
+};
+  const CONTENEDOR_ID = "contenedor_01";
+  const UMBRAL_ALARMA = -5;
+  const UMBRAL_DELTA = 3;
 
-        /* Desktop: Vuelve a 4 columnas */
-        @media (min-width: 768px) {
-            .container { max-width: 1000px; margin: 20px auto; padding: 30px; border-radius: 15px; }
-            .controls { grid-template-columns: 1fr 1fr 1fr 1fr; gap: 20px; }
-            .defib-controls { grid-template-columns: 1fr 1fr 1fr; }
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+
+  // ══════════════════════════════════════════
+  //  ESTADO
+  // ══════════════════════════════════════════
+  let historial = [];
+  let ultimaTemp = null;
+  let alarmaActiva = false;
+  let sinConexion = false;
+  let ultimoUpdate = null;
+
+  // ══════════════════════════════════════════
+  //  ESCUCHAR DATOS EN TIEMPO REAL
+  // ══════════════════════════════════════════
+  const lecturaRef = ref(db, `contenedores/${CONTENEDOR_ID}/lectura_actual`);
+  onValue(lecturaRef, (snapshot) => {
+    const data = snapshot.val();
+    if (!data) return;
+
+    const temp = parseFloat(data.temperatura);
+    const ts = data.timestamp || Date.now();
+
+    actualizarUI(temp, ts);
+    agregarAlHistorial(temp, ts);
+    verificarAlarma(temp);
+
+    ultimaTemp = temp;
+    ultimoUpdate = Date.now();
+    sinConexion = false;
+    actualizarEstadoConexion(true);
+  }, (error) => {
+    console.error("Error Firebase:", error);
+    actualizarEstadoConexion(false);
+  });
+
+  // ══════════════════════════════════════════
+  //  WATCHDOG: si no llegan datos en 3 min → sin conexión
+  // ══════════════════════════════════════════
+  setInterval(() => {
+    if (ultimoUpdate && Date.now() - ultimoUpdate > 180000) {
+      actualizarEstadoConexion(false);
+    }
+  }, 10000);
+
+  // ══════════════════════════════════════════
+  //  FUNCIONES UI
+  // ══════════════════════════════════════════
+  function actualizarUI(temp, ts) {
+    const el = document.getElementById('temp-display');
+    if (el) {
+      el.textContent = temp.toFixed(1) + "°C";
+      el.className = 'temp-value ' + (temp > UMBRAL_ALARMA ? 'alarma' : 'normal');
+    }
+
+    const tsEl = document.getElementById('ultimo-update');
+    if (tsEl) {
+      const fecha = new Date(ts);
+      tsEl.textContent = fecha.toLocaleTimeString('es-AR');
+    }
+  }
+
+  function verificarAlarma(temp) {
+    const banner = document.getElementById('alarma-banner');
+    const alarmaTemp = document.getElementById('alarma-temp');
+    if (!banner) return;
+
+    if (temp > UMBRAL_ALARMA) {
+      banner.style.display = 'flex';
+      if (alarmaTemp) alarmaTemp.textContent = temp.toFixed(1) + "°C";
+      alarmaActiva = true;
+    } else {
+      banner.style.display = 'none';
+      alarmaActiva = false;
+    }
+  }
+
+  function actualizarEstadoConexion(conectado) {
+    const dot = document.getElementById('conn-dot');
+    const txt = document.getElementById('conn-txt');
+    if (!dot || !txt) return;
+    dot.className = 'conn-dot ' + (conectado ? 'online' : 'offline');
+    txt.textContent = conectado ? 'En línea' : 'Sin conexión';
+  }
+
+  function agregarAlHistorial(temp, ts) {
+    const fecha = new Date(ts);
+    const label = fecha.getHours().toString().padStart(2,'0') + ':' +
+                  fecha.getMinutes().toString().padStart(2,'0') + ':' +
+                  fecha.getSeconds().toString().padStart(2,'0');
+
+    historial.push({ label, temp });
+    if (historial.length > 60) historial.shift();
+    actualizarGrafico();
+  }
+
+  // ══════════════════════════════════════════
+  //  GRÁFICO
+  // ══════════════════════════════════════════
+  let chart;
+  window.addEventListener('DOMContentLoaded', () => {
+    const ctx = document.getElementById('tempChart').getContext('2d');
+    chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Temperatura (°C)',
+          data: [],
+          borderColor: '#00d4ff',
+          backgroundColor: 'rgba(0, 212, 255, 0.07)',
+          borderWidth: 2,
+          pointRadius: 2,
+          pointHoverRadius: 5,
+          tension: 0.4,
+          fill: true,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 300 },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#0d1f2d',
+            titleColor: '#00d4ff',
+            bodyColor: '#fff',
+            borderColor: '#00d4ff',
+            borderWidth: 1,
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#6b8fa3', font: { family: 'Share Tech Mono', size: 10 }, maxTicksLimit: 8 },
+            grid: { color: 'rgba(255,255,255,0.04)' }
+          },
+          y: {
+            ticks: { color: '#6b8fa3', font: { family: 'Share Tech Mono', size: 11 },
+              callback: v => v + '°C'
+            },
+            grid: { color: 'rgba(255,255,255,0.04)' },
+            suggestedMin: -25,
+            suggestedMax: 5,
+          }
         }
-    </style>
+      }
+    });
+
+    // Línea de umbral
+    const umbralPlugin = {
+      id: 'umbralLine',
+      afterDraw(chart) {
+        const { ctx, scales: { y } } = chart;
+        const yPos = y.getPixelForValue(UMBRAL_ALARMA);
+        ctx.save();
+        ctx.setLineDash([6, 4]);
+        ctx.strokeStyle = 'rgba(255, 80, 80, 0.5)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(chart.chartArea.left, yPos);
+        ctx.lineTo(chart.chartArea.right, yPos);
+        ctx.stroke();
+        ctx.restore();
+      }
+    };
+    Chart.register(umbralPlugin);
+  });
+
+  function actualizarGrafico() {
+    if (!chart) return;
+    chart.data.labels = historial.map(h => h.label);
+    chart.data.datasets[0].data = historial.map(h => h.temp);
+    chart.update();
+  }
+
+  // ══════════════════════════════════════════
+  //  MODO DEMO (si no hay Firebase configurado)
+  // ══════════════════════════════════════════
+  window.iniciarDemo = function() {
+    let tempDemo = -18;
+    setInterval(() => {
+      tempDemo += (Math.random() - 0.48) * 0.5;
+      tempDemo = Math.max(-25, Math.min(0, tempDemo));
+      const ahora = Date.now();
+      actualizarUI(tempDemo, ahora);
+      agregarAlHistorial(tempDemo, ahora);
+      verificarAlarma(tempDemo);
+      ultimoUpdate = ahora;
+      actualizarEstadoConexion(true);
+    }, 2000);
+  }
+</script>
+
+<style>
+  :root {
+    --bg: #050e17;
+    --panel: #0a1a28;
+    --border: #0e2a3f;
+    --accent: #00d4ff;
+    --accent2: #0077ff;
+    --danger: #ff4444;
+    --warn: #ffaa00;
+    --text: #c8dde8;
+    --muted: #4a7a94;
+    --font-mono: 'Share Tech Mono', monospace;
+    --font-body: 'Barlow', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid de fondo */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 20px;
+  }
+
+  /* HEADER */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .logo-area h1 {
+    font-family: var(--font-mono);
+    font-size: 1.1rem;
+    color: var(--accent);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+
+  .logo-area p {
+    font-size: 0.75rem;
+    color: var(--muted);
+    letter-spacing: 1px;
+    margin-top: 2px;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .conn-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  .conn-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: all 0.3s;
+  }
+
+  .conn-dot.online {
+    background: #00ff88;
+    box-shadow: 0 0 8px #00ff88;
+    animation: pulse 2s infinite;
+  }
+
+  .conn-dot.offline {
+    background: var(--danger);
+    box-shadow: 0 0 8px var(--danger);
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .time-display {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  /* ALARMA BANNER */
+  #alarma-banner {
+    display: none;
+    align-items: center;
+    gap: 16px;
+    background: rgba(255, 68, 68, 0.1);
+    border: 1px solid var(--danger);
+    border-left: 4px solid var(--danger);
+    border-radius: 8px;
+    padding: 14px 20px;
+    margin-bottom: 24px;
+    animation: alarmaPulse 1s infinite;
+  }
+
+  @keyframes alarmaPulse {
+    0%, 100% { border-color: var(--danger); background: rgba(255,68,68,0.1); }
+    50% { border-color: #ff8888; background: rgba(255,68,68,0.18); }
+  }
+
+  .alarma-icon { font-size: 1.4rem; }
+
+  .alarma-text h3 {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--danger);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .alarma-text p {
+    font-size: 0.8rem;
+    color: #ff9999;
+    margin-top: 2px;
+  }
+
+  /* GRID PRINCIPAL */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  @media (max-width: 700px) {
+    .main-grid { grid-template-columns: 1fr; }
+  }
+
+  /* PANEL */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0.3;
+  }
+
+  .panel-label {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  /* TEMPERATURA PRINCIPAL */
+  .temp-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    min-height: 200px;
+  }
+
+  .temp-value {
+    font-family: var(--font-mono);
+    font-size: 4.5rem;
+    font-weight: 400;
+    line-height: 1;
+    transition: color 0.5s, text-shadow 0.5s;
+  }
+
+  .temp-value.normal {
+    color: var(--accent);
+    text-shadow: 0 0 30px rgba(0, 212, 255, 0.4);
+  }
+
+  .temp-value.alarma {
+    color: var(--danger);
+    text-shadow: 0 0 30px rgba(255, 68, 68, 0.5);
+  }
+
+  .temp-sub {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 10px;
+    font-family: var(--font-mono);
+    letter-spacing: 2px;
+  }
+
+  .umbral-info {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.72rem;
+    color: var(--muted);
+    font-family: var(--font-mono);
+  }
+
+  .umbral-info span { color: var(--warn); }
+
+  /* GRÁFICO */
+  .chart-panel {
+    min-height: 200px;
+  }
+
+  .chart-wrap {
+    height: 180px;
+    position: relative;
+  }
+
+  /* STATS ROW */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  @media (max-width: 600px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .stat-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+
+  .stat-card .s-label {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .stat-card .s-value {
+    font-family: var(--font-mono);
+    font-size: 1.3rem;
+    color: var(--accent);
+  }
+
+  .stat-card .s-value.danger { color: var(--danger); }
+  .stat-card .s-value.ok { color: #00ff88; }
+
+  /* INFO ROW */
+  .info-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  @media (max-width: 600px) {
+    .info-row { grid-template-columns: 1fr; }
+  }
+
+  .info-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+  }
+
+  .info-item:last-child { border-bottom: none; }
+
+  .info-item .key {
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 1px;
+  }
+
+  .info-item .val {
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+  }
+
+  /* FOOTER */
+  footer {
+    text-align: center;
+    margin-top: 24px;
+    font-size: 0.65rem;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    letter-spacing: 2px;
+  }
+
+  /* DEMO BTN */
+  .demo-btn {
+    background: transparent;
+    border: 1px solid var(--accent2);
+    color: var(--accent2);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 2px;
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .demo-btn:hover {
+    background: rgba(0,119,255,0.1);
+  }
+</style>
 </head>
 <body>
-    
-    <div class="container">
-        <h1>Monitor de Emergencias Cardíacas 🔴</h1>
-        
-        <div class="controls">
-            <div class="control-group">
-                <button id="playPauseBtn" class="playing"><span>⏸️ Pausar</span></button>
-            </div>
-            
-            <div class="control-group">
-                <label for="patologia">🩺 Patología (Ritmo)</label>
-                <select id="patologia">
-                    <option value="normal">Ritmo Sinusal Normal</option>
-                    <optgroup label="Ritmos Desfibrilables (Choque Necesario)">
-                        <option value="vfib">Fibrilación Ventricular (FV)</option>
-                        <option value="pulseless_vt">Taquicardia Ventricular (sin pulso)</option>
-                    </optgroup>
-                    <optgroup label="Ritmos NO Desfibrilables (Choque Prohibido)">
-                        <option value="asystole">Asistolia (Línea Plana)</option>
-                        <option value="pea">Actividad Eléctrica sin Pulso (PEA)</option>
-                        <option value="bav3">Bloqueo AV de 3er Grado</option>
-                        <option value="fibrilacion">Fibrilación Auricular (FA)</option>
-                        <option value="flutter">Flutter Auricular</option>
-                        <option value="svt">Taquicardia Supraventricular (TSV)</option>
-                        <option value="infarto">Infarto (Elevación ST)</option>
-                    </optgroup>
-                </select>
-            </div>
-            
-            <div class="control-group">
-                <label for="edad">👤 Edad (<span id="edad-value">45</span> Años)</label>
-                <input type="number" id="edad" min="1" max="120" value="45">
-            </div>
 
-            <div class="control-group">
-                <label for="frecuencia">❤️ FC Base (<span id="frecuencia-value">80</span> BPM)</label>
-                <input type="range" id="frecuencia" min="40" max="180" value="80">
-            </div>
-        </div>
+<div class="container">
 
-        <h2>Desfibrilador ⚡</h2>
-        <div class="defib-controls">
-            <div class="control-group">
-                <label for="charge">Carga (Joules)</label>
-                <input type="range" id="charge" min="50" max="360" step="10" value="200">
-                <span id="charge-value">200 J</span>
-            </div>
-            <div class="control-group">
-                <button id="defibChargeBtn"><span>🔋 Cargar</span></button>
-            </div>
-            <div class="control-group">
-                <button id="defibDeliverBtn"><span>💥 Descargar</span></button>
-            </div>
-        </div>
+  <!-- HEADER -->
+  <header>
+    <div class="logo-area">
+      <h1>❄ COLDCHAIN MONITOR</h1>
+      <p>SISTEMA DE MONITOREO — CADENA DE FRÍO</p>
+    </div>
+    <div class="header-right">
+      <div class="conn-status">
+        <div class="conn-dot" id="conn-dot"></div>
+        <span id="conn-txt">Conectando...</span>
+      </div>
+      <div class="time-display" id="reloj">--:--:--</div>
+      <button class="demo-btn" onclick="iniciarDemo()">▶ DEMO</button>
+    </div>
+  </header>
 
-        <div id="clinical-reference">
-            <h3>Referencia Clínica</h3>
-            <p id="patologia-title" style="font-weight: bold; font-size: 1.1em; color: #333;">Ritmo Sinusal Normal</p>
-            <p id="patologia-desc">El impulso eléctrico se origina en el nodo sinusal y sigue la vía de conducción normal, resultando en un ritmo cardíaco regular y una frecuencia adecuada.</p>
-            <p class="warning" id="defib-obs">**OBSERVACIÓN DESFIBRILADOR:** NO indicado. Aplicar un choque en este ritmo es peligroso y puede inducir Asistolia. El paciente tiene pulso.</p>
-        </div>
+  <!-- BANNER ALARMA -->
+  <div id="alarma-banner">
+    <div class="alarma-icon">🚨</div>
+    <div class="alarma-text">
+      <h3>⚠ ALERTA — PÉRDIDA DE CADENA DE FRÍO</h3>
+      <p>Temperatura actual: <strong id="alarma-temp">--</strong> — Umbral superado: −5°C</p>
+    </div>
+  </div>
 
-        <div class="chart-container">
-            <canvas id="ecgChart" height="400"></canvas>
-        </div>
+  <!-- STATS -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="s-label">Temp. actual</div>
+      <div class="s-value" id="stat-actual">--.-°C</div>
+    </div>
+    <div class="stat-card">
+      <div class="s-label">Mín. sesión</div>
+      <div class="s-value" id="stat-min">--.-°C</div>
+    </div>
+    <div class="stat-card">
+      <div class="s-label">Máx. sesión</div>
+      <div class="s-value" id="stat-max">--.-°C</div>
+    </div>
+    <div class="stat-card">
+      <div class="s-label">Estado</div>
+      <div class="s-value ok" id="stat-estado">OK</div>
+    </div>
+  </div>
 
+  <!-- MAIN GRID -->
+  <div class="main-grid">
+
+    <!-- TEMP PRINCIPAL -->
+    <div class="panel temp-panel">
+      <div class="panel-label">CONTENEDOR 01</div>
+      <div class="temp-value normal" id="temp-display">--.-°C</div>
+      <div class="temp-sub">ÚLTIMA LECTURA: <span id="ultimo-update">--:--:--</span></div>
+      <div class="umbral-info">
+        <div>UMBRAL: <span>−5°C</span></div>
+        <div>DELTA: <span>3°C/2min</span></div>
+      </div>
     </div>
 
-    <script>
-        // --- INICIALIZACIÓN Y VARIABLES GLOBALES ---
-        const ctx = document.getElementById('ecgChart').getContext('2d');
-        let ecgChart;
-        const maxPoints = 150;
-        let dataSet = Array(maxPoints).fill(0);
-        let animationFrameId;
+    <!-- GRÁFICO -->
+    <div class="panel chart-panel">
+      <div class="panel-label">HISTORIAL — ÚLTIMAS 60 LECTURAS</div>
+      <div class="chart-wrap">
+        <canvas id="tempChart"></canvas>
+      </div>
+    </div>
 
-        // Referencias a elementos
-        const patologiaControl = document.getElementById('patologia');
-        const frecuenciaControl = document.getElementById('frecuencia');
-        const chargeControl = document.getElementById('charge');
-        const defibChargeBtn = document.getElementById('defibChargeBtn');
-        const defibDeliverBtn = document.getElementById('defibDeliverBtn');
-        const playPauseBtn = document.getElementById('playPauseBtn');
+  </div>
 
-        // Referencias de texto
-        const patologiaTitle = document.getElementById('patologia-title');
-        const patologiaDesc = document.getElementById('patologia-desc');
-        const defibObs = document.getElementById('defib-obs');
+  <!-- INFO -->
+  <div class="info-row">
+    <div class="panel">
+      <div class="panel-label">CONFIGURACIÓN</div>
+      <div class="info-item">
+        <span class="key">SENSOR</span>
+        <span class="val">DS18B20 WATERPROOF</span>
+      </div>
+      <div class="info-item">
+        <span class="key">MICRO</span>
+        <span class="val">ESP32 WROOM-32</span>
+      </div>
+      <div class="info-item">
+        <span class="key">FRECUENCIA LECTURA</span>
+        <span class="val">10 SEG</span>
+      </div>
+      <div class="info-item">
+        <span class="key">FRECUENCIA ENVÍO</span>
+        <span class="val">60 SEG</span>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-label">SISTEMA</div>
+      <div class="info-item">
+        <span class="key">WATCHDOG RED</span>
+        <span class="val">5 MIN</span>
+      </div>
+      <div class="info-item">
+        <span class="key">REINICIO PREVENTIVO</span>
+        <span class="val">03:00 AM</span>
+      </div>
+      <div class="info-item">
+        <span class="key">BUFFER OFFLINE</span>
+        <span class="val">SPIFFS 1.5MB</span>
+      </div>
+      <div class="info-item">
+        <span class="key">BASE DE DATOS</span>
+        <span class="val">FIREBASE RTDB</span>
+      </div>
+    </div>
+  </div>
 
-        let isPlaying = true;
-        let beatCounter = 0;
-        let defibCharged = false;
-        let currentBPM = 80;
+  <footer>
+    COLDCHAIN MONITOR v1.0 — ESP32 + FIREBASE REALTIME DATABASE — SALTA, AR
+  </footer>
 
-        // Base Pattern and Patology Logic 
-        const basePattern = [0, 0, 0, 0, 0.5, 1.5, 0.5, 0, 0, -3, 12, -6, 0, 0, 0, 1, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        
-        function getBeatValue(pointInBeat) {
-            return basePattern[pointInBeat % basePattern.length] || 0;
-        }
+</div>
 
-        function getPatologyValue(baseValue, pointInBeat, pointsPerBeat) {
-            const patologia = patologiaControl.value;
-             switch (patologia) {
-                case 'vfib': return (Math.random() * 10 - 5) + Math.sin(beatCounter / 5) * 5;
-                case 'pulseless_vt': const vtBeat = [-8, 8, -8, 8, -8, 0, 0, 0]; return vtBeat[pointInBeat % vtBeat.length] || 0;
-                case 'asystole': return 0;
-                case 'pea': const peaWave = [0, 1, 0.5, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0]; return (peaWave[pointInBeat % (pointsPerBeat / 3)] || 0) * 0.5;
-                case 'flutter': const fWave = Math.sin(beatCounter * 0.8) * 1.5; const qrsBase = (pointInBeat >= 9 && pointInBeat <= 15) ? getBeatValue(pointInBeat) : 0; return fWave + qrsBase;
-                case 'svt': if (pointInBeat < 7) return 0; return baseValue;
-                case 'fibrilacion': const pWaveFactor = (pointInBeat < 7 && pointInBeat > 3) ? 0.1 : 1; const chaoticBase = (Math.random() - 0.5) * 0.5; return (baseValue * pWaveFactor) + chaoticBase;
-                case 'infarto': if (pointInBeat >= 12 && pointInBeat <= 16) return baseValue + 4; return baseValue;
-                case 'bav3': const qrsPattern = [-3, 12, -6, 0, 0, 1, 3, 1, 0, 0, 0, 0, 0]; const qrsIndex = beatCounter % 70; let qrsValue = qrsPattern[qrsIndex] || 0; if (qrsIndex >= qrsPattern.length) qrsValue = 0; let pWaveValue = (beatCounter % 20 >= 4 && beatCounter % 20 <= 6) ? basePattern[beatCounter % 20] : 0; return qrsValue + pWaveValue;
-                case 'normal': default: return baseValue;
-            }
-        }
+<script>
+  // Reloj en tiempo real
+  function actualizarReloj() {
+    const ahora = new Date();
+    document.getElementById('reloj').textContent = ahora.toLocaleTimeString('es-AR');
+  }
+  setInterval(actualizarReloj, 1000);
+  actualizarReloj();
 
-        // --- REFERENCIA CLÍNICA DETALLADA ---
-        const patologiaData = {
-            'normal': { title: "Ritmo Sinusal Normal", desc: "Ritmo regular, FC entre 60 y 100 BPM. El pulso está presente.", obs: "NO indicado. Aplicar un choque en este ritmo es peligroso y puede inducir Asistolia. El paciente tiene pulso." },
-            'vfib': { title: "Fibrilación Ventricular (FV)", desc: "Actividad eléctrica caótica. NO HAY PULSO. Emergencia absoluta.", obs: "INDICADO. Es un ritmo de paro cardiaco desfibrilable. Choque exitoso ≥ 200 J revierte a Sinusal." },
-            'pulseless_vt': { title: "Taquicardia Ventricular (sin pulso)", desc: "Ritmo rápido (>150 BPM) y ancho, regular. NO HAY PULSO.", obs: "INDICADO. Es un ritmo de paro cardiaco desfibrilable. Choque no sincronizado ≥ 200 J para revertir." },
-            'asystole': { title: "Asistolia (Línea Plana)", desc: "Ausencia total de actividad eléctrica. NO HAY PULSO. Peor pronóstico.", obs: "NO indicado. La desfibrilación NO funciona. Tratamiento: RCP y Adrenalina." },
-            'pea': { title: "Actividad Eléctrica sin Pulso (PEA)", desc: "Actividad eléctrica en monitor, pero NO HAY PULSO.", obs: "NO indicado. La desfibrilación NO funciona. Tratamiento: RCP e identificación de causas reversibles." },
-            'fibrilacion': { title: "Fibrilación Auricular (FA)", desc: "Ritmo RR irregular e impulsos caóticos en las aurículas. Puede haber pulso.", obs: "NO indicado (si está estable). Se usa Cardioversión Sincronizada. Choque iatrogénico puede causar Asistolia." },
-            'infarto': { title: "Infarto Agudo de Miocardio (STEMI)", desc: "Ritmo Sinusal (generalmente) con elevación del segmento ST. Indica oclusión coronaria.", obs: "NO indicado. La desfibrilación es PELIGROSA y no trata la isquemia. Choque iatrogénico puede causar Asistolia." },
-            'bav3': { title: "Bloqueo AV de 3er Grado", desc: "Disociación completa entre aurículas y ventrículos. FC muy baja (<40 BPM).", obs: "NO indicado. El tratamiento primario es la estimulación (marcapasos). Choque iatrogénico mortal." },
-            'flutter': { title: "Flutter Auricular", desc: "Ritmo auricular rápido y regular ('dientes de sierra').", obs: "NO indicado (si está estable). Se usa Cardioversión Sincronizada. Choque no sincronizado puede inducir Asistolia." },
-            'svt': { title: "Taquicardia Supraventricular (TSV)", desc: "Ritmo regular y muy rápido (>150 BPM). QRS estrecho.", obs: "NO indicado (si está estable). Tratamiento: Adenosina. Solo Cardioversión Sincronizada si está inestable." }
-        };
+  // Stats min/max
+  let minTemp = Infinity, maxTemp = -Infinity;
+  const origActualizarUI = window.actualizarUI;
 
-        function updatePatologiaInfo() {
-            const selected = patologiaControl.value;
-            const data = patologiaData[selected] || patologiaData['normal'];
+  // Observer para stats
+  const observer = new MutationObserver(() => {
+    const txt = document.getElementById('temp-display').textContent;
+    const v = parseFloat(txt);
+    if (isNaN(v)) return;
 
-            patologiaTitle.textContent = data.title;
-            patologiaDesc.textContent = data.desc;
-            defibObs.innerHTML = `**OBSERVACIÓN DESFIBRILADOR:** ${data.obs}`; 
-            defibObs.className = data.obs.includes('INDICADO') ? 'warning' : 'warning';
-        }
+    document.getElementById('stat-actual').textContent = v.toFixed(1) + '°C';
 
+    if (v < minTemp) {
+      minTemp = v;
+      document.getElementById('stat-min').textContent = v.toFixed(1) + '°C';
+    }
+    if (v > maxTemp) {
+      maxTemp = v;
+      document.getElementById('stat-max').textContent = v.toFixed(1) + '°C';
+    }
 
-        // --- LÓGICA DE DESFIBRILADOR Y CHOQUE ---
-        let chargingInterval;
-        let chargeProgress = 0;
+    const estadoEl = document.getElementById('stat-estado');
+    if (v > -5) {
+      estadoEl.textContent = 'ALARMA';
+      estadoEl.className = 's-value danger';
+    } else {
+      estadoEl.textContent = 'OK';
+      estadoEl.className = 's-value ok';
+    }
+  });
 
-        function startDefibChargeAnimation() {
-            defibCharged = false;
-            defibDeliverBtn.classList.remove('ready');
-            defibChargeBtn.disabled = true;
-            defibChargeBtn.classList.add('charging');
-            chargeProgress = 0;
-            
-            defibChargeBtn.querySelector('span').textContent = 'Cargando... 0%';
+  observer.observe(document.getElementById('temp-display'), { childList: true, subtree: true, characterData: true });
+</script>
 
-            let totalChargeTime = 2000;
-            let startTime = Date.now();
-
-            chargingInterval = setInterval(() => {
-                const elapsedTime = Date.now() - startTime;
-                chargeProgress = Math.min(100, (elapsedTime / totalChargeTime) * 100);
-                
-                defibChargeBtn.querySelector('span').textContent = `Cargando... ${Math.floor(chargeProgress)}%`;
-
-                if (chargeProgress >= 100) {
-                    clearInterval(chargingInterval);
-                    defibCharged = true;
-                    defibDeliverBtn.classList.add('ready');
-                    defibChargeBtn.disabled = false;
-                    defibChargeBtn.classList.remove('charging');
-                    defibChargeBtn.querySelector('span').textContent = `⚡ LISTO (${chargeControl.value} J)`;
-                }
-            }, 50);
-        }
-
-        function handleDefibrillation() {
-            if (!defibCharged) return;
-            
-            console.log('¡CHOQUE ENTREGADO!');
-
-            const patologiaActual = patologiaControl.value;
-            const charge = parseInt(chargeControl.value);
-            let nuevoRitmo = patologiaActual; 
-
-            defibCharged = false;
-            defibDeliverBtn.classList.remove('ready');
-            defibChargeBtn.querySelector('span').textContent = '🔋 Cargar';
-
-            const ritmosDesfibrilables = ['vfib', 'pulseless_vt'];
-            const ritmosNoDesfibrilables = ['asystole', 'pea', 'bav3', 'fibrilacion', 'flutter', 'svt', 'infarto', 'normal'];
-
-            if (ritmosDesfibrilables.includes(patologiaActual)) {
-                if (charge >= 200) {
-                    nuevoRitmo = 'normal';
-                    currentBPM = 70;
-                    frecuenciaControl.value = 70;
-                    document.getElementById('frecuencia-value').textContent = '70 BPM';
-                } else {
-                    nuevoRitmo = patologiaActual; 
-                }
-            } else if (ritmosNoDesfibrilables.includes(patologiaActual)) {
-                nuevoRitmo = 'asystole'; 
-                currentBPM = 0;
-                frecuenciaControl.value = 0;
-                document.getElementById('frecuencia-value').textContent = '0 BPM (Asistolia)';
-            }
-
-            patologiaControl.value = nuevoRitmo;
-            
-            // Artefacto de choque (Visual)
-            dataSet = Array(maxPoints).fill(0).map((_, i) => (i < 5) ? 15 : 0);
-            beatCounter = 0;
-            
-            updatePatologiaInfo();
-        }
-
-        // --- BUCLE PRINCIPAL DE SIMULACIÓN Y MANEJO DE ESTADOS ---
-        function updateMonitor() {
-            if (!isPlaying) { cancelAnimationFrame(animationFrameId); return; }
-
-            const freq = parseInt(frecuenciaControl.value);
-            currentBPM = freq; 
-
-            const edad = parseInt(document.getElementById('edad').value);
-            
-            let pointsPerBeat = Math.floor(60 / freq * 150 / 2);
-            if (patologiaControl.value === 'bav3') pointsPerBeat = 70;
-            if (patologiaControl.value === 'vfib' || patologiaControl.value === 'asystole') pointsPerBeat = 1;
-
-            const pointInBeat = beatCounter % pointsPerBeat;
-            let baseValue = getBeatValue(pointInBeat);
-            let patologyValue = getPatologyValue(baseValue, pointInBeat, pointsPerBeat);
-            
-            dataSet.shift();
-            dataSet.push(patologyValue);
-
-            ecgChart.data.datasets[0].data = dataSet;
-            ecgChart.options.plugins.title.text = `FC: ${freq} BPM - ${patologiaControl.options[patologiaControl.selectedIndex].text} | EDAD: ${edad} años`;
-            ecgChart.update('none');
-
-            beatCounter++;
-            animationFrameId = requestAnimationFrame(updateMonitor);
-        }
-
-        function togglePlayPause() {
-            isPlaying = !isPlaying;
-            if (isPlaying) {
-                playPauseBtn.querySelector('span').textContent = '⏸️ Pausar';
-                playPauseBtn.classList.remove('paused');
-                playPauseBtn.classList.add('playing');
-                updateMonitor();
-            } else {
-                playPauseBtn.querySelector('span').textContent = '▶️ Iniciar';
-                playPauseBtn.classList.remove('playing');
-                playPauseBtn.classList.add('paused');
-                cancelAnimationFrame(animationFrameId);
-            }
-        }
-
-        const resetSimulation = () => {
-            beatCounter = 0; 
-            dataSet = Array(maxPoints).fill(0); 
-            
-            if(chargingInterval) {
-                clearInterval(chargingInterval);
-                defibChargeBtn.classList.remove('charging');
-                defibChargeBtn.disabled = false;
-                defibChargeBtn.querySelector('span').textContent = '🔋 Cargar';
-            }
-            defibCharged = false;
-            defibDeliverBtn.classList.remove('ready');
-
-            currentBPM = parseInt(frecuenciaControl.value);
-            updatePatologiaInfo();
-        };
-
-        // --- ENLACE DE EVENTOS ---
-        
-        playPauseBtn.addEventListener('click', togglePlayPause);
-        defibChargeBtn.addEventListener('click', startDefibChargeAnimation);
-        defibDeliverBtn.addEventListener('click', () => { if (defibCharged) { handleDefibrillation(); } });
-
-        document.getElementById('patologia').addEventListener('change', resetSimulation);
-        document.getElementById('edad').addEventListener('change', resetSimulation);
-        document.getElementById('edad').addEventListener('input', () => { 
-             document.getElementById('edad-value').textContent = document.getElementById('edad').value;
-        });
-
-        frecuenciaControl.addEventListener('input', () => { 
-            document.getElementById('frecuencia-value').textContent = frecuenciaControl.value + ' BPM';
-            currentBPM = parseInt(frecuenciaControl.value);
-        });
-
-        chargeControl.addEventListener('input', () => { 
-            document.getElementById('charge-value').textContent = chargeControl.value + ' J';
-            if (defibCharged) {
-                defibChargeBtn.querySelector('span').textContent = `⚡ LISTO (${chargeControl.value} J)`;
-            }
-        });
-        
-        function initChart() {
-            ecgChart = new Chart(ctx, {
-                type: 'line',
-                data: { labels: Array(maxPoints).fill(0).map((_, i) => i), datasets: [{
-                    label: 'ECG Trazo', data: dataSet, borderColor: '#28a745', borderWidth: 2, tension: 0.2, pointRadius: 0,
-                }]},
-                options: {
-                    animation: false, responsive: true, maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false },
-                        title: { display: true, color: 'white', text: `FC: ${frecuenciaControl.value} BPM - EDAD: ${document.getElementById('edad').value} años` }
-                    },
-                    scales: { x: { display: false }, y: { min: -15, max: 15, grid: { color: 'rgba(40, 167, 69, 0.1)' }, ticks: { display: false } } }
-                }
-            });
-        }
-
-        // --- INICIO DE LA APLICACIÓN ---
-        initChart();
-        updateMonitor();
-        updatePatologiaInfo(); 
-    </script>
 </body>
 </html>
